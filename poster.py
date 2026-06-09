@@ -2,8 +2,11 @@ import os
 import json
 import datetime
 import requests
+import tempfile
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import io
 
 # 1. Pakistan Time Zone (UTC + 5) Setup
 now_utc = datetime.datetime.utcnow()
@@ -13,120 +16,158 @@ print(f"Current UTC Time: {now_utc.strftime('%H:%M')}, Current PKT Hour: {pkt_ho
 # 2. Pages Aur Google Drive Sub-folders Ki Configuration
 PAGES_CONFIG = {
     "DESI_DHAMAL_PAGE": {
-        "page_id": "2160579077602705", 
+        "page_id": "2160579077602705",
         "token_env": "DESI_DHAMAL_TOKEN",
-        "folder_id": "1dZmdO7TbmA1sUFEJH4x1Elpe7DAZaGcV", 
-        "active_hours": [16, 18, 20, 22] # 3:30 PM (Hour 15), 6 PM (18), 8 PM (20), 10 PM (22)
+        "folder_id": "1dZmdO7TbmA1sUFEJH4x1Elpe7DAZaGcV",
+        "active_hours": [15, 18, 20, 22]  # PKT hours
     },
     "THE_AI_EFFECT_PAGE": {
         "page_id": "346054295247848",
         "token_env": "THE_AI_EFFECT_TOKEN",
-        "folder_id": "14ofoHtSIhCS0B4uvvwivHfcJeFXlKNH2", 
-        "active_hours": [14, 18, 21] # 2 PM (14), 6 PM (18), 9 PM (21)
+        "folder_id": "14ofoHtSIhCS0B4uvvwivHfcJeFXlKNH2",
+        "active_hours": [14, 18, 21]  # PKT hours
     }
 }
 
 # 3. Google Drive Service Authorization
 try:
     creds_json = json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON"))
-    
-    # BIILKUL SAHI SCOPES (Is se scope error kabhi nahi aayega)
     SCOPES = ['https://www.googleapis.com/auth/drive']
-    
     creds = service_account.Credentials.from_service_account_info(creds_json, scopes=SCOPES)
     drive_service = build('drive', 'v3', credentials=creds)
+    print("Google Drive authorization successful.")
 except Exception as e:
     print("Google Authentication Error:", e)
     exit(1)
+
+
+def download_from_drive(file_id, file_name):
+    """Google Drive se video locally download karo GitHub runner par."""
+    print(f"  Downloading '{file_name}' from Google Drive...")
+    
+    # /tmp folder mein save karo
+    local_path = os.path.join(tempfile.gettempdir(), file_name)
+    
+    request = drive_service.files().get_media(fileId=file_id)
+    
+    with io.FileIO(local_path, 'wb') as fh:
+        downloader = MediaIoBaseDownload(fh, request, chunksize=10 * 1024 * 1024)  # 10MB chunks
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            if status:
+                print(f"  Download progress: {int(status.progress() * 100)}%")
+    
+    file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
+    print(f"  Download complete! File size: {file_size_mb:.1f} MB -> {local_path}")
+    return local_path
+
+
+def upload_to_facebook(page_id, page_token, local_video_path, title, description):
+    """Local video file ko directly Facebook Graph API par binary upload karo."""
+    print(f"  Uploading video to Facebook (binary upload)...")
+    
+    fb_url = f"https://graph.facebook.com/v19.0/{page_id}/videos"
+    
+    payload = {
+        'title': title,
+        'description': description,
+        'access_token': page_token
+    }
+    
+    with open(local_video_path, 'rb') as video_file:
+        files = {
+            'source': (os.path.basename(local_video_path), video_file, 'video/mp4')
+        }
+        response = requests.post(fb_url, data=payload, files=files, timeout=300)
+    
+    return response.json()
+
 
 def get_and_post_video(page_name, config):
     page_id = config["page_id"]
     page_token = os.environ.get(config["token_env"])
     folder_id = config["folder_id"]
-    
+
     if not page_token:
-        print(f"[{page_name}] Error: Facebook token nahi mila GitHub secrets me!")
+        print(f"[{page_name}] ERROR: Facebook token nahi mila GitHub Secrets mein! ({config['token_env']})")
         return
 
-    # 1. Folder se sab se pehli available video list karna
+    # Step 1: Drive folder se pehli video dhundo
+    print(f"[{page_name}] Searching for video in Google Drive folder...")
     try:
         results = drive_service.files().list(
             q=f"'{folder_id}' in parents and mimeType contains 'video/' and trashed = false",
-            fields="files(id, name)",
+            fields="files(id, name, size)",
+            orderBy="createdTime",
             pageSize=1
         ).execute()
     except Exception as e:
         print(f"[{page_name}] Google Drive error while fetching files:", e)
         return
-    
+
     files = results.get('files', [])
     if not files:
-        print(f"[{page_name}] Koyi video nahi mili is folder me. Script checking completed.")
+        print(f"[{page_name}] Koi video nahi mili Drive folder mein. Skipping.")
         return
 
     video_file = files[0]
     file_id = video_file['id']
-    file_name = os.path.splitext(video_file['name'])[0] 
-    
-    print(f"[{page_name}] Video mili: '{video_file['name']}'. Processing authorization download...")
-    
-    # 2. Token generation bypass formula (Service Account Token manual extraction)
-    try:
-        from google.auth.transport.requests import Request
-        if not creds.valid:
-            creds.refresh(Request())
-        
-        # Google authorization direct check
-        access_token = creds.token
-        if not access_token:
-            raise Exception("Token extraction failed")
-    except Exception as e:
-        print(f"[{page_name}] Local auth refresh warning, switching to direct chunk stream: {e}")
-        # Agar default method fail ho toh hum drive api se direct token nikalte hain
-        creds.refresh(Request())
-        access_token = creds.token
+    file_name = video_file['name']
+    title = os.path.splitext(file_name)[0]
 
-    # FIXED: Bilkul sahi authenticated link format
-    direct_video_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&access_token={access_token}"
-    
-    print(f"[{page_name}] Token verified. Facebook API stream pipeline sending now...")
-    
-    # FIXED: Bilkul sahi Facebook Graph API endpoint
-    fb_url = f"https://graph.facebook.com/v19.0/{page_id}/videos"
-    payload = {
-        'file_url': direct_video_url,
-        'title': file_name,
-        'description': file_name, 
-        'access_token': page_token
-    }
-    
-    # Facebook Server ko request send karna
+    print(f"[{page_name}] Video found: '{file_name}'")
+
+    # Step 2: Video locally download karo
+    local_path = None
     try:
-        response = requests.post(fb_url, data=payload)
-        fb_result = response.json()
+        local_path = download_from_drive(file_id, file_name)
     except Exception as e:
-        print(f"[{page_name}] Facebook Connection Timeout Error:", e)
+        print(f"[{page_name}] Download failed:", e)
         return
-    
+
+    # Step 3: Facebook par binary upload karo
+    try:
+        fb_result = upload_to_facebook(page_id, page_token, local_path, title, title)
+    except Exception as e:
+        print(f"[{page_name}] Facebook upload error:", e)
+        # Local temp file clean karo
+        if local_path and os.path.exists(local_path):
+            os.remove(local_path)
+        return
+    finally:
+        # Local temp file hamesha clean karo (success ya fail)
+        if local_path and os.path.exists(local_path):
+            os.remove(local_path)
+            print(f"[{page_name}] Temp file cleaned up.")
+
+    # Step 4: Result check karo
     if "id" in fb_result:
-        print(f"[{page_name}] SUCCESS! Video post ho gayi. FB Video ID: {fb_result['id']}")
-        
-        # Post kamyabi se hone ke baad Google Drive se file delete (Trash) karna
+        print(f"[{page_name}] SUCCESS! Video posted. FB Video ID: {fb_result['id']}")
+
+        # Step 5: Drive se video delete karo (taake agli baar naya video use ho)
         try:
             drive_service.files().delete(fileId=file_id).execute()
-            print(f"[{page_name}] Video Google Drive se permanently delete kar di gayi hai.")
+            print(f"[{page_name}] Video deleted from Google Drive.")
         except Exception as e:
-            print(f"[{page_name}] Video post ho gayi thi, lekin Drive se delete nahi ho saki:", e)
+            print(f"[{page_name}] WARNING: Video posted but Drive delete failed:", e)
     else:
         print(f"[{page_name}] Facebook API Error:", fb_result)
 
-# Main Execution: Check karna ke is hour me kaunsa page scheduled hai
+
+# ========================================
+# Main Execution
+# ========================================
+print(f"\n--- Running scheduler for PKT Hour: {pkt_hour} ---")
+
 any_page_run = False
 for page, cfg in PAGES_CONFIG.items():
     if pkt_hour in cfg["active_hours"]:
         any_page_run = True
-        print(f"Time match ho gaya! Current PKT Hour: {pkt_hour}. Processing {page}...")
+        print(f"\n[MATCH] PKT Hour {pkt_hour} matches schedule for '{page}'. Starting...")
         get_and_post_video(page, cfg)
 
 if not any_page_run:
-    print(f"Is hour ({pkt_hour} PKT) me koyi page schedule nahi hai. No action taken.")
+    print(f"No page scheduled for PKT Hour {pkt_hour}. No action taken.")
+
+print("\n--- Script finished ---")
