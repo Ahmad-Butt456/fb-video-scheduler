@@ -31,7 +31,7 @@ try:
     creds_json = json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON"))
     
     # BIILKUL SAHI SCOPES (Is se scope error kabhi nahi aayega)
-    SCOPES = ['https://googleapis.com']
+    SCOPES = ['https://www.googleapis.com/auth/drive']
     
     creds = service_account.Credentials.from_service_account_info(creds_json, scopes=SCOPES)
     drive_service = build('drive', 'v3', credentials=creds)
@@ -87,12 +87,12 @@ def get_and_post_video(page_name, config):
         access_token = creds.token
 
     # FIXED: Bilkul sahi authenticated link format
-    direct_video_url = f"https://googleapis.com{file_id}?alt=media&access_token={access_token}"
+    direct_video_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&access_token={access_token}"
     
     print(f"[{page_name}] Token verified. Facebook API stream pipeline sending now...")
     
     # FIXED: Bilkul sahi Facebook Graph API endpoint
-    fb_url = f"https://facebook.com{page_id}/videos"
+    fb_url = f"https://graph.facebook.com/v19.0/{page_id}/videos"
     payload = {
         'file_url': direct_video_url,
         'title': file_name,
