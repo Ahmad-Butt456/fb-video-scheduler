@@ -19,7 +19,7 @@ PAGES_CONFIG = {
         "page_id": "2160579077602705",
         "token_env": "DESI_DHAMAL_TOKEN",
         "folder_id": "1dZmdO7TbmA1sUFEJH4x1Elpe7DAZaGcV",
-        "active_hours": [15, 18, 20, 22]  # PKT hours
+        "active_hours": [16, 18, 20, 22]  # PKT hours
     },
     "THE_AI_EFFECT_PAGE": {
         "page_id": "346054295247848",
