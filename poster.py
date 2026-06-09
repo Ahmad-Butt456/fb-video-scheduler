@@ -30,7 +30,11 @@ PAGES_CONFIG = {
 # 3. Google Drive Service Authorization
 try:
     creds_json = json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON"))
-    creds = service_account.Credentials.from_service_account_info(creds_json)
+    
+    # SAHI SCOPES DEFINE KARNA (Is se invalid_scope ka error khatam ho jayega)
+    SCOPES = ['https://googleapis.com']
+    
+    creds = service_account.Credentials.from_service_account_info(creds_json, scopes=SCOPES)
     drive_service = build('drive', 'v3', credentials=creds)
 except Exception as e:
     print("Google Authentication Error:", e)
