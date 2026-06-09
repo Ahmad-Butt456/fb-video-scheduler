@@ -9,10 +9,23 @@ from googleapiclient.http import MediaIoBaseDownload
 import io
 from concurrent.futures import ThreadPoolExecutor
 
-# 1. Pakistan Time Zone (UTC + 5) Setup
+# 1. Pakistan Time Zone (UTC + 5) Setup & Robust Time Rounding (30-min window)
 now_utc = datetime.datetime.utcnow()
-pkt_hour = (now_utc.hour + 5) % 24
-print(f"Current UTC Time: {now_utc.strftime('%H:%M')}, Current PKT Hour: {pkt_hour}")
+pkt_now = now_utc + datetime.timedelta(hours=5)
+
+# Robust minute rounding to :00 or :30 to tolerate GitHub Actions launch delays
+minute = pkt_now.minute
+if minute < 15:
+    rounded_minute = 0
+elif minute < 45:
+    rounded_minute = 30
+else:
+    rounded_minute = 0
+    pkt_now = pkt_now + datetime.timedelta(hours=1)
+
+pkt_hour = pkt_now.hour
+pkt_time_str = f"{pkt_now.hour:02d}:{rounded_minute:02d}"
+print(f"Current UTC Time: {now_utc.strftime('%H:%M')}, Rounded PKT Time: {pkt_time_str}")
 
 # 2. Google Drive Service Authorization
 try:
@@ -188,11 +201,21 @@ def get_and_post_video(page_name, config):
 # Load dynamically from Drive
 PAGES_CONFIG = load_configs_from_drive()
 
-print(f"\n--- Running scheduler for PKT Hour: {pkt_hour} ---")
+print(f"\n--- Running scheduler for PKT Time: {pkt_time_str} ---")
 
 active_pages = []
 for page, cfg in PAGES_CONFIG.items():
-    if pkt_hour in cfg.get("active_hours", []):
+    # Dono support karte hain: naya 'active_times' (e.g. ["12:30"]) aur purana 'active_hours' (e.g. [14, 18])
+    active_times = cfg.get("active_times", [])
+    active_hours = cfg.get("active_hours", [])
+    
+    is_active = False
+    if pkt_time_str in active_times:
+        is_active = True
+    elif pkt_hour in active_hours:
+        is_active = True
+        
+    if is_active:
         active_pages.append((page, cfg))
 
 if active_pages:
