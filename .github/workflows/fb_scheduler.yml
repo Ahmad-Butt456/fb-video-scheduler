@@ -5,7 +5,7 @@ on:
     # Page B: 2 PM PKT -> 09:00 UTC
     - cron: '0 9 * * *'
     # NAYA SCHEDULE - Page A: 3:30 PM PKT -> 10:30 UTC
-    - cron: '15 11 * * *'
+    - cron: '46 10 * * *'
     # Page A & B: 6 PM PKT -> 13:00 UTC
     - cron: '0 13 * * *'
     # Page A: 8 PM PKT -> 15:00 UTC
@@ -30,7 +30,7 @@ jobs:
 
       - name: Install Google and Facebook Dependencies
         run: |
-          pip install requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+          pip install -r requirements.txt
 
       - name: Execute Auto Poster Script
         env:
