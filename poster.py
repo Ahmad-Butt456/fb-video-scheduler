@@ -77,17 +77,15 @@ def get_and_post_video(page_name, config):
         from google.auth.transport.requests import Request
         creds.refresh(Request())
     
+    # Facebook direct link generate karna - BINA token refresh error ke
     direct_video_url = f"https://googleapis.com{file_id}?alt=media"
-    headers = {"Authorization": f"Bearer {creds.token}"}
     
-    # Facebook API Request Payload
-    fb_url = f"https://facebook.com{page_id}/videos"
-    payload = {
-        'file_url': direct_video_url,
-        'title': file_name,
-        'description': file_name, 
-        'access_token': page_token
-    }
+    # Hamein authentication header ko is tarah set karna hoga jo refresh function par depend na kare
+    if not creds.valid:
+        from google.auth.transport.requests import Request
+        creds.refresh(Request())
+        
+    headers = {"Authorization": f"Bearer {creds.token}"}
     
     # Facebook Server ko request send karna
     response = requests.post(fb_url, data=payload, headers=headers)
