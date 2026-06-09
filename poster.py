@@ -151,16 +151,58 @@ def get_and_post_video(page_name, config):
         if local_path and os.path.exists(local_path):
             os.remove(local_path)
 
-    # Step 4: Result Verification & Delete from Drive
+    # Step 4: Result Verification & Cleanup from Drive
     if "id" in fb_result:
         print(f"[{page_name}] SUCCESS! FB Video ID: {fb_result['id']}")
 
-        # Video post ho gayi, ab Drive se permanently delete karo
+        # Strategy: Delete try karo → nahi hua toh Trash → nahi hua toh Move to Posted
+        cleaned = False
+
+        # Attempt 1: Permanent Delete
         try:
             drive_service.files().delete(fileId=file_id).execute()
-            print(f"[{page_name}] Video successfully deleted from Google Drive.")
-        except Exception as e:
-            print(f"[{page_name}] WARNING: Video posted but failed to delete from Drive:", e)
+            print(f"[{page_name}] Video permanently deleted from Google Drive.")
+            cleaned = True
+        except Exception:
+            pass
+
+        # Attempt 2: Move to Trash
+        if not cleaned:
+            try:
+                drive_service.files().update(fileId=file_id, body={'trashed': True}).execute()
+                print(f"[{page_name}] Video moved to Google Drive Trash.")
+                cleaned = True
+            except Exception:
+                pass
+
+        # Attempt 3: Move to 'Posted' folder (fallback)
+        if not cleaned:
+            try:
+                # Posted folder dhundo ya banao
+                q = f"'{folder_id}' in parents and name = 'Posted' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+                results = drive_service.files().list(q=q, fields="files(id)").execute()
+                posted_files = results.get('files', [])
+
+                if posted_files:
+                    posted_folder_id = posted_files[0]['id']
+                else:
+                    folder_metadata = {
+                        'name': 'Posted',
+                        'mimeType': 'application/vnd.google-apps.folder',
+                        'parents': [folder_id]
+                    }
+                    posted_folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
+                    posted_folder_id = posted_folder.get('id')
+
+                drive_service.files().update(
+                    fileId=file_id,
+                    addParents=posted_folder_id,
+                    removeParents=folder_id,
+                    fields='id, parents'
+                ).execute()
+                print(f"[{page_name}] Video moved to 'Posted' folder (delete/trash not allowed).")
+            except Exception as e:
+                print(f"[{page_name}] WARNING: Video posted but cleanup failed:", e)
     else:
         print(f"[{page_name}] Facebook API Error:", fb_result)
 
