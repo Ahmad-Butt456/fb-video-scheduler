@@ -1,0 +1,40 @@
+name: Facebook Auto Video Poster Cron Job
+
+on:
+  schedule:
+    # Page B: 2 PM PKT -> 09:00 UTC
+    - cron: '0 9 * * *'
+    # NAYA SCHEDULE - Page A: 3:30 PM PKT -> 10:30 UTC
+    - cron: '30 10 * * *'
+    # Page A & B: 6 PM PKT -> 13:00 UTC
+    - cron: '0 13 * * *'
+    # Page A: 8 PM PKT -> 15:00 UTC
+    - cron: '0 15 * * *'
+    # Page B: 9 PM PKT -> 16:00 UTC
+    - cron: '0 16 * * *'
+    # Page A: 10 PM PKT -> 17:00 UTC
+    - cron: '0 17 * * *'
+  workflow_dispatch: # Is se aap manually bhi button daba kar script run kar sakte hain
+
+jobs:
+  post-video:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Google and Facebook Dependencies
+        run: |
+          pip install requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+
+      - name: Execute Auto Poster Script
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          DESI_DHAMAL_TOKEN: ${{ secrets.DESI_DHAMAL_TOKEN }}
+          THE_AI_EFFECT_TOKEN: ${{ secrets.THE_AI_EFFECT_TOKEN }}
+        run: python poster.py
