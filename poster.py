@@ -16,7 +16,7 @@ PAGES_CONFIG = {
         "page_id": "2160579077602705", 
         "token_env": "DESI_DHAMAL_TOKEN",
         "folder_id": "1dZmdO7TbmA1sUFEJH4x1Elpe7DAZaGcV", 
-        "active_hours": [15, 18, 20, 22] # 3:30 PM (Hour 15), 6 PM (18), 8 PM (20), 10 PM (22)
+        "active_hours": [16, 18, 20, 22] # 3:30 PM (Hour 15), 6 PM (18), 8 PM (20), 10 PM (22)
     },
     "THE_AI_EFFECT_PAGE": {
         "page_id": "346054295247848",
