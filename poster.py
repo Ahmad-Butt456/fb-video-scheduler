@@ -68,27 +68,6 @@ def load_configs_from_drive():
         exit(1)
 
 
-def get_or_create_posted_folder(parent_folder_id):
-    """Page folder ke andar 'Posted' folder dhundta hai, ya naya banata hai."""
-    try:
-        q = f"'{parent_folder_id}' in parents and name = 'Posted' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        results = drive_service.files().list(q=q, fields="files(id)").execute()
-        files = results.get('files', [])
-        
-        if files:
-            return files[0]['id']
-        
-        # Agar nahi mila toh naya banayein
-        folder_metadata = {
-            'name': 'Posted',
-            'mimeType': 'application/vnd.google-apps.folder',
-            'parents': [parent_folder_id]
-        }
-        folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
-        return folder.get('id')
-    except Exception as e:
-        print(f"Error managing 'Posted' folder for parent {parent_folder_id}: {e}")
-        return None
 
 
 def download_from_drive(file_id, file_name):
@@ -172,25 +151,16 @@ def get_and_post_video(page_name, config):
         if local_path and os.path.exists(local_path):
             os.remove(local_path)
 
-    # Step 4: Result Verification & Move to Posted Folder
+    # Step 4: Result Verification & Delete from Drive
     if "id" in fb_result:
         print(f"[{page_name}] SUCCESS! FB Video ID: {fb_result['id']}")
 
-        # Move file to 'Posted' folder
-        posted_folder_id = get_or_create_posted_folder(folder_id)
-        if posted_folder_id:
-            try:
-                drive_service.files().update(
-                    fileId=file_id,
-                    addParents=posted_folder_id,
-                    removeParents=folder_id,
-                    fields='id, parents'
-                ).execute()
-                print(f"[{page_name}] Video successfully moved to 'Posted' folder.")
-            except Exception as e:
-                print(f"[{page_name}] WARNING: Video posted but failed to move in Drive:", e)
-        else:
-            print(f"[{page_name}] WARNING: Could not resolve 'Posted' folder. File left in place.")
+        # Video post ho gayi, ab Drive se permanently delete karo
+        try:
+            drive_service.files().delete(fileId=file_id).execute()
+            print(f"[{page_name}] Video successfully deleted from Google Drive.")
+        except Exception as e:
+            print(f"[{page_name}] WARNING: Video posted but failed to delete from Drive:", e)
     else:
         print(f"[{page_name}] Facebook API Error:", fb_result)
 
