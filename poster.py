@@ -15,15 +15,15 @@ print(f"Current UTC Time: {now_utc.strftime('%H:%M')}, Current PKT Hour: {pkt_ho
 PAGES_CONFIG = {
     "DESI_DHAMAL_PAGE": {
         "page_id": "2160579077602705", 
-        "token_env": "",
-        "folder_id": "PAGE_A_K_SUB_FOLDER_KI_ID", 
+        "token_env": "DESI_DHAMAL_TOKEN",
+        "folder_id": "1dZmdO7TbmA1sUFEJH4x1Elpe7DAZaGcV", 
         "active_hours": [18, 20, 22] # 6 PM, 8 PM, 10 PM
     },
     "THE_AI_EFFECT_PAGE": {
-        "page_id": "APNI_PAGE_B_KI_NUMERIC_ID",
-        "token_env": "PAGE_B_TOKEN",
-        "folder_id": "PAGE_B_K_SUB_FOLDER_KI_ID", 
-        "active_hours": [14, 18, 21] # 2 PM, 6 PM, 9 PM
+        "page_id": "346054295247848",
+        "token_env": "THE_AI_EFFECT_TOKEN",
+        "folder_id": "14ofoHtSIhCS0B4uvvwivHfcJeFXlKNH2", 
+        "active_hours": [15, 18, 21] # 3 PM, 6 PM, 9 PM
     }
 }
 
