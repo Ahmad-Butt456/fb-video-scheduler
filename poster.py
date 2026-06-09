@@ -204,15 +204,37 @@ PAGES_CONFIG = load_configs_from_drive()
 print(f"\n--- Running scheduler for PKT Time: {pkt_time_str} ---")
 
 active_pages = []
+# Current rounded time ko minutes mein convert karo
+current_total_minutes = pkt_hour * 60 + rounded_minute
+
 for page, cfg in PAGES_CONFIG.items():
     # Dono support karte hain: naya 'active_times' (e.g. ["12:30"]) aur purana 'active_hours' (e.g. [14, 18])
     active_times = cfg.get("active_times", [])
     active_hours = cfg.get("active_hours", [])
     
     is_active = False
-    if pkt_time_str in active_times:
-        is_active = True
-    elif pkt_hour in active_hours:
+    
+    # Smart matching: config time ko 15-min window mein match karo
+    for t in active_times:
+        try:
+            parts = t.strip().split(":")
+            cfg_hour = int(parts[0])
+            cfg_min = int(parts[1])
+            cfg_total_minutes = cfg_hour * 60 + cfg_min
+            diff = abs(current_total_minutes - cfg_total_minutes)
+            # Handle midnight wraparound (e.g. 23:50 vs 00:00)
+            diff = min(diff, 1440 - diff)
+            if diff <= 15:
+                print(f"[{page}] Matched config time {t} with current slot {pkt_time_str} (diff={diff} min)")
+                is_active = True
+                break
+        except (ValueError, IndexError):
+            # Agar time format galat hai toh skip karo
+            print(f"[{page}] WARNING: Invalid time format '{t}' in config, skipping.")
+            continue
+    
+    # Purana active_hours format bhi check karo (backward compatible)
+    if not is_active and pkt_hour in active_hours:
         is_active = True
         
     if is_active:
