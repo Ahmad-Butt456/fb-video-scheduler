@@ -2,19 +2,9 @@ name: Facebook Auto Video Poster Cron Job
 
 on:
   schedule:
-    # Page B: 2 PM PKT -> 09:00 UTC
-    - cron: '0 9 * * *'
-    # NAYA SCHEDULE - Page A: 3:30 PM PKT -> 10:30 UTC
-    - cron: '25 11 * * *'
-    # Page A & B: 6 PM PKT -> 13:00 UTC
-    - cron: '0 13 * * *'
-    # Page A: 8 PM PKT -> 15:00 UTC
-    - cron: '0 15 * * *'
-    # Page B: 9 PM PKT -> 16:00 UTC
-    - cron: '0 16 * * *'
-    # Page A: 10 PM PKT -> 17:00 UTC
-    - cron: '0 17 * * *'
-  workflow_dispatch: # Is se aap manually bhi button daba kar script run kar sakte hain
+    # Pakistan Time ke mutabiq har ghante (on the hour) chalega
+    - cron: '0 * * * *'
+  workflow_dispatch: # Manual test button
 
 jobs:
   post-video:
@@ -35,6 +25,4 @@ jobs:
       - name: Execute Auto Poster Script
         env:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-          DESI_DHAMAL_TOKEN: ${{ secrets.DESI_DHAMAL_TOKEN }}
-          THE_AI_EFFECT_TOKEN: ${{ secrets.THE_AI_EFFECT_TOKEN }}
         run: python poster.py
