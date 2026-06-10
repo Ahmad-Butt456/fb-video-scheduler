@@ -1,0 +1,43 @@
+name: Build AWS Lambda ZIP Package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'lambda_function.py'
+      - 'requirements.txt'
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create Package Directory and Install Dependencies
+        run: |
+          mkdir -p lambda_package
+          # Install requirements to the package directory
+          pip install -r requirements.txt -t lambda_package/
+          # Copy the lambda code into the package
+          cp lambda_function.py lambda_package/
+
+      - name: Zip Deployment Package
+        run: |
+          cd lambda_package
+          zip -r ../lambda.zip .
+
+      - name: Upload Lambda Zip as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-deployment-package
+          path: lambda.zip
+          retention-days: 7
