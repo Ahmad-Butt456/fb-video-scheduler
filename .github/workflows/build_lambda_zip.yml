@@ -20,24 +20,19 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Create Package Directory and Install Dependencies
         run: |
           mkdir -p lambda_package
-          # Install requirements to the package directory
-          pip install -r requirements.txt -t lambda_package/
+          # Install AWS Lambda-compatible binary wheels directly
+          pip install -r requirements.txt -t lambda_package/ --platform manylinux2014_x86_64 --only-binary=:all: --implementation cp --python-version 3.12
           # Copy the lambda code into the package
           cp lambda_function.py lambda_package/
 
-      - name: Zip Deployment Package
-        run: |
-          cd lambda_package
-          zip -r ../lambda.zip .
-
-      - name: Upload Lambda Zip as Artifact
+      - name: Upload Lambda Package as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: lambda-deployment-package
-          path: lambda.zip
+          path: lambda_package/
           retention-days: 7
