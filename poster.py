@@ -9,23 +9,32 @@ from googleapiclient.http import MediaIoBaseDownload
 import io
 from concurrent.futures import ThreadPoolExecutor
 
-# 1. Pakistan Time Zone (UTC + 5) Setup & Robust Time Rounding (30-min window)
+# 1. Pakistan Time Zone (UTC + 5) Setup
 now_utc = datetime.datetime.utcnow()
 pkt_now = now_utc + datetime.timedelta(hours=5)
-
-# Robust minute rounding to :00 or :30 to tolerate GitHub Actions launch delays
-minute = pkt_now.minute
-if minute < 15:
-    rounded_minute = 0
-elif minute < 45:
-    rounded_minute = 30
-else:
-    rounded_minute = 0
-    pkt_now = pkt_now + datetime.timedelta(hours=1)
-
+pkt_time_str = pkt_now.strftime('%H:%M')  # Actual time, no rounding
 pkt_hour = pkt_now.hour
-pkt_time_str = f"{pkt_now.hour:02d}:{rounded_minute:02d}"
-print(f"Current UTC Time: {now_utc.strftime('%H:%M')}, Rounded PKT Time: {pkt_time_str}")
+
+print(f"Current UTC Time: {now_utc.strftime('%H:%M')}, Actual PKT Time: {pkt_time_str}")
+
+
+def is_time_match(scheduled_time_str, tolerance_minutes=28):
+    """
+    Check karo ke scheduled time (HH:MM) abhi ke waqt ke +/- tolerance minutes ke andar hai.
+    GitHub Actions delay handle karne ke liye 20-minute window use karo.
+    """
+    try:
+        sched_h, sched_m = map(int, scheduled_time_str.split(':'))
+        scheduled = datetime.timedelta(hours=sched_h, minutes=sched_m)
+        current = datetime.timedelta(hours=pkt_now.hour, minutes=pkt_now.minute)
+        
+        diff = abs((current - scheduled).total_seconds() / 60)
+        # Midnight wrap-around handle karo (e.g., 23:50 vs 00:05)
+        diff = min(diff, 24 * 60 - diff)
+        
+        return diff <= tolerance_minutes
+    except Exception:
+        return False
 
 # 2. Google Drive Service Authorization
 try:
@@ -68,6 +77,27 @@ def load_configs_from_drive():
         exit(1)
 
 
+def get_or_create_posted_folder(parent_folder_id):
+    """Page folder ke andar 'Posted' folder dhundta hai, ya naya banata hai."""
+    try:
+        q = f"'{parent_folder_id}' in parents and name = 'Posted' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        results = drive_service.files().list(q=q, fields="files(id)").execute()
+        files = results.get('files', [])
+        
+        if files:
+            return files[0]['id']
+        
+        # Agar nahi mila toh naya banayein
+        folder_metadata = {
+            'name': 'Posted',
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_folder_id]
+        }
+        folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
+        return folder.get('id')
+    except Exception as e:
+        print(f"Error managing 'Posted' folder for parent {parent_folder_id}: {e}")
+        return None
 
 
 def download_from_drive(file_id, file_name):
@@ -151,58 +181,25 @@ def get_and_post_video(page_name, config):
         if local_path and os.path.exists(local_path):
             os.remove(local_path)
 
-    # Step 4: Result Verification & Cleanup from Drive
+    # Step 4: Result Verification & Move to Posted Folder
     if "id" in fb_result:
         print(f"[{page_name}] SUCCESS! FB Video ID: {fb_result['id']}")
 
-        # Strategy: Delete try karo → nahi hua toh Trash → nahi hua toh Move to Posted
-        cleaned = False
-
-        # Attempt 1: Permanent Delete
-        try:
-            drive_service.files().delete(fileId=file_id).execute()
-            print(f"[{page_name}] Video permanently deleted from Google Drive.")
-            cleaned = True
-        except Exception:
-            pass
-
-        # Attempt 2: Move to Trash
-        if not cleaned:
+        # Move file to 'Posted' folder
+        posted_folder_id = get_or_create_posted_folder(folder_id)
+        if posted_folder_id:
             try:
-                drive_service.files().update(fileId=file_id, body={'trashed': True}).execute()
-                print(f"[{page_name}] Video moved to Google Drive Trash.")
-                cleaned = True
-            except Exception:
-                pass
-
-        # Attempt 3: Move to 'Posted' folder (fallback)
-        if not cleaned:
-            try:
-                # Posted folder dhundo ya banao
-                q = f"'{folder_id}' in parents and name = 'Posted' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-                results = drive_service.files().list(q=q, fields="files(id)").execute()
-                posted_files = results.get('files', [])
-
-                if posted_files:
-                    posted_folder_id = posted_files[0]['id']
-                else:
-                    folder_metadata = {
-                        'name': 'Posted',
-                        'mimeType': 'application/vnd.google-apps.folder',
-                        'parents': [folder_id]
-                    }
-                    posted_folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
-                    posted_folder_id = posted_folder.get('id')
-
                 drive_service.files().update(
                     fileId=file_id,
                     addParents=posted_folder_id,
                     removeParents=folder_id,
                     fields='id, parents'
                 ).execute()
-                print(f"[{page_name}] Video moved to 'Posted' folder (delete/trash not allowed).")
+                print(f"[{page_name}] Video successfully moved to 'Posted' folder.")
             except Exception as e:
-                print(f"[{page_name}] WARNING: Video posted but cleanup failed:", e)
+                print(f"[{page_name}] WARNING: Video posted but failed to move in Drive:", e)
+        else:
+            print(f"[{page_name}] WARNING: Could not resolve 'Posted' folder. File left in place.")
     else:
         print(f"[{page_name}] Facebook API Error:", fb_result)
 
@@ -216,50 +213,30 @@ PAGES_CONFIG = load_configs_from_drive()
 print(f"\n--- Running scheduler for PKT Time: {pkt_time_str} ---")
 
 active_pages = []
-# Current rounded time ko minutes mein convert karo
-current_total_minutes = pkt_hour * 60 + rounded_minute
-
 for page, cfg in PAGES_CONFIG.items():
-    # Dono support karte hain: naya 'active_times' (e.g. ["12:30"]) aur purana 'active_hours' (e.g. [14, 18])
     active_times = cfg.get("active_times", [])
     active_hours = cfg.get("active_hours", [])
-    
+
     is_active = False
-    
-    # Smart matching: config time ko 15-min window mein match karo
+    # Naya: active_times window check (±20 min tolerance)
     for t in active_times:
-        try:
-            parts = t.strip().split(":")
-            cfg_hour = int(parts[0])
-            cfg_min = int(parts[1])
-            cfg_total_minutes = cfg_hour * 60 + cfg_min
-            diff = abs(current_total_minutes - cfg_total_minutes)
-            # Handle midnight wraparound (e.g. 23:50 vs 00:00)
-            diff = min(diff, 1440 - diff)
-            if diff <= 15:
-                print(f"[{page}] Matched config time {t} with current slot {pkt_time_str} (diff={diff} min)")
-                is_active = True
-                break
-        except (ValueError, IndexError):
-            # Agar time format galat hai toh skip karo
-            print(f"[{page}] WARNING: Invalid time format '{t}' in config, skipping.")
-            continue
-    
-    # Purana active_hours format bhi check karo (backward compatible)
+        if is_time_match(t):
+            is_active = True
+            print(f"[{page}] Time match: scheduled '{t}', current PKT '{pkt_time_str}'")
+            break
+    # Purana format: active_hours integer list (backwards compatible)
     if not is_active and pkt_hour in active_hours:
         is_active = True
-        
+
     if is_active:
         active_pages.append((page, cfg))
 
 if active_pages:
-    print(f"Found {len(active_pages)} pages active at this hour. Starting parallel upload pipeline...")
-    
-    # 20+ pages ke liye parallel processing (Max 5 threads at once to avoid CPU/Network overload)
+    print(f"Found {len(active_pages)} pages active. Starting parallel upload pipeline...")
     with ThreadPoolExecutor(max_workers=5) as executor:
         for page, cfg in active_pages:
             executor.submit(get_and_post_video, page, cfg)
 else:
-    print(f"No pages scheduled for PKT Hour {pkt_hour}.")
+    print(f"No pages scheduled for PKT Time {pkt_time_str}.")
 
 print("\n--- Script finished ---")
